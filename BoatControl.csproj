@@ -65,4 +65,8 @@
 		<PackageReference Include="Plugin.BLE" Version="3.1.0" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\BoatControl.Shared\BoatControl.Shared\BoatControl.Shared.csproj" />
+	</ItemGroup>
+
 </Project>

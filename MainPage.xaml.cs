@@ -14,9 +14,27 @@ using Microsoft.Maui.Controls;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using BoatControl.Communication;
+using BoatControl.Shared.Messaging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BoatControl
 {
+    public class MyDeviceMessageInterpritator : DeviceMessageInterpritator
+    {
+        public MyDeviceMessageInterpritator() : base(NullLogger<DeviceMessageInterpritator>.Instance)
+        {
+            
+        }
+
+        // Make GetMessageString public
+        public byte[] GetMessageStringAsBytes(DeviceMessage message)
+        {
+            var data = base.GetMessageString(message);
+            return Encoding.UTF8.GetBytes(data);
+        }
+    }
+
+
     public interface IWifiScanner
     {
         Task<List<WifiNetwork>> ScanAsync();
@@ -25,6 +43,9 @@ namespace BoatControl
     {
         private readonly IAdapter _adapter;
         private readonly ObservableCollection<IDevice> _devices;
+
+        private MyDeviceMessageInterpritator _deviceMessageInterpritator = new MyDeviceMessageInterpritator();
+
 
         bool locationPermissionGranted = false;
         bool bluetoothPermissionGranted = false;
@@ -53,6 +74,8 @@ namespace BoatControl
             //LoadWifiNetworks();
             RequestPermission();  // Request permissions after UI initialization
         }
+
+
 
         private async void RequestPermission()
         {
@@ -267,42 +290,56 @@ namespace BoatControl
                 var rxCharacteristic = await service.GetCharacteristicAsync(Guid.Parse(BLE_CHARACTERISTIC_UUID_RX));
                 if (rxCharacteristic == null) throw new Exception("RX characteristic not found on the device.");
 
-                // Step 1: Send initial pairing command
-                var pairingCommand = Encoding.UTF8.GetBytes("text auth\n");
-                await txCharacteristic.WriteAsync(pairingCommand);
-
-                // Step 2: Receive challenge response
-                var (data, resultCode) = await rxCharacteristic.ReadAsync();
-                if (resultCode != 0) throw new Exception("Failed to read challenge from the device.");
-
-                var challengeMessage = Encoding.UTF8.GetString(data);
-                if (!challengeMessage.StartsWith("response="))
+                rxCharacteristic.ValueUpdated += (s, e) =>
                 {
-                    throw new Exception($"Unexpected response: {challengeMessage}");
-                }
+                    // Handle incoming data from the device
+                    var data = e.Characteristic.Value;
+                    var message = Encoding.UTF8.GetString(data, 0, data.Length);
+                    Console.WriteLine($"Received: {message}");
+                };
+                await rxCharacteristic.StartUpdatesAsync();
 
-                // Step 3: Compute response to challenge
-                string challenge = ParseChallengeFromResponse(challengeMessage);
-                string secret = "your-secret"; // Replace with the actual secret
-                string expectedResponse = ComputeSha256(challenge + secret);
+                //// Step 1: Send initial pairing command
+
+                var randomChallenge = Guid.NewGuid().ToString("N");
+                var deviceMessage = DeviceMessage.GetTextMessage(randomChallenge, "auth");
+ 
+                var textToSend = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage);
+
+                await txCharacteristic.WriteAsync(textToSend);
+
+                //// Step 2: Receive challenge response
+                //var (data, resultCode) = await rxCharacteristic.ReadAsync();
+                //if (resultCode != 0) throw new Exception("Failed to read challenge from the device.");
+
+                //var challengeMessage = Encoding.UTF8.GetString(data);
+                //if (!challengeMessage.StartsWith("response="))
+                //{
+                //    throw new Exception($"Unexpected response: {challengeMessage}");
+                //}
+
+                //// Step 3: Compute response to challenge
+                //string challenge = ParseChallengeFromResponse(challengeMessage);
+                //string secret = "your-secret"; // Replace with the actual secret
+                //string expectedResponse = ComputeSha256(challenge + secret);
 
 
-                // Step 4: Receive final acknowledgment
-                var responseCommand = Encoding.UTF8.GetBytes(expectedResponse + "\n");
-                await txCharacteristic.WriteAsync(responseCommand);
+                //// Step 4: Receive final acknowledgment
+                //var responseCommand = Encoding.UTF8.GetBytes(expectedResponse + "\n");
+                //await txCharacteristic.WriteAsync(responseCommand);
 
-                // Step 5: Receive final acknowledgment
-                var (ackData, ackResultCode) = await rxCharacteristic.ReadAsync();
-                if (ackResultCode != 0) throw new Exception("Failed to read acknowledgment from the device.");
+                //// Step 5: Receive final acknowledgment
+                //var (ackData, ackResultCode) = await rxCharacteristic.ReadAsync();
+                //if (ackResultCode != 0) throw new Exception("Failed to read acknowledgment from the device.");
 
-                var ackMessage = Encoding.UTF8.GetString(ackData);
-                if (ackMessage.Equals("ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    await DisplayAlert("Success", "Device successfully paired.", "OK");
-                    return true;
-                }
+                //var ackMessage = Encoding.UTF8.GetString(ackData);
+                //if (ackMessage.Equals("ok", StringComparison.OrdinalIgnoreCase))
+                //{
+                //    await DisplayAlert("Success", "Device successfully paired.", "OK");
+                //    return true;
+                //}
 
-                await DisplayAlert("Failure", "Pairing failed. Response: " + ackMessage, "OK");
+                //await DisplayAlert("Failure", "Pairing failed. Response: " + ackMessage, "OK");
                 return false;
             }
             catch (Exception ex)
