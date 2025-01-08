@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
@@ -13,7 +13,6 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 using Microsoft.Maui.Controls;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using BoatControl.Communication;
 using BoatControl.Shared.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -23,7 +22,7 @@ namespace BoatControl
     {
         public MyDeviceMessageInterpritator() : base(NullLogger<DeviceMessageInterpritator>.Instance)
         {
-            
+
         }
 
         // Make GetMessageString public
@@ -34,11 +33,11 @@ namespace BoatControl
         }
     }
 
-
     public interface IWifiScanner
     {
         Task<List<WifiNetwork>> ScanAsync();
     }
+
     public partial class MainPage : ContentPage
     {
         private readonly IAdapter _adapter;
@@ -64,6 +63,8 @@ namespace BoatControl
         private static readonly string BLE_CHARACTERISTIC_UUID_RX = "0EAF8BF5-2D2E-4602-A72A-0D2B051874A5";
         private static readonly string BLE_CHARACTERISTIC_UUID_RESET = "119367EB-67AB-4192-93E5-D3ECA3D0FEE7";
 
+        private static readonly string BC_SECRET = "c1278456931740f0a78775565d6c881fdd5c7d75130b4d2d92901d2e3fd145efabc755f4dd3d4a95b1bf200af8ea93cb";
+
         public MainPage()
         {
             InitializeComponent();  // Initialize UI components first
@@ -74,8 +75,6 @@ namespace BoatControl
             //LoadWifiNetworks();
             RequestPermission();  // Request permissions after UI initialization
         }
-
-
 
         private async void RequestPermission()
         {
@@ -110,24 +109,6 @@ namespace BoatControl
             catch (Exception ex)
             {
                 await DisplayAlert("Error", $"An error occurred while requesting permissions: {ex.Message}", "OK");
-            }
-        }
-
-        private async void LoadWifiNetworks(object sender, EventArgs e)
-        {
-            var scanner = DependencyService.Get<IWifiScanner>();
-            if (scanner != null)
-            {
-                var networks = await scanner.ScanAsync();
-                // Display the list of networks in your UI
-                foreach (var network in networks)
-                {
-                    Console.WriteLine($"SSID: {network.SSID}, Signal: {network.SignalStrength}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("Wi-Fi scanning not supported on this platform.");
             }
         }
 
@@ -171,7 +152,7 @@ namespace BoatControl
                 await DisplayAlert("Error", $"Scanning failed: {ex.Message}", "OK");
             }
         }
-        
+
         private async void OnDeviceSelected(object sender, SelectedItemChangedEventArgs e)
         {
             if (e.SelectedItem is IDevice device)
@@ -180,7 +161,7 @@ namespace BoatControl
                 {
                     // Attempt to retrieve advertisement records
                     var advertisementData = GetAdvertisementData(device);
-                    bcName= advertisementData.Name;
+                    bcName = advertisementData.Name;
                     bcNo = advertisementData.DeviceNo;
 
 
@@ -192,7 +173,7 @@ namespace BoatControl
                     {
                         // Get the last four characters (2 bytes in hexadecimal)
                         string lastFourHex = manufacturerData.Substring(manufacturerData.Length - 8, 8).Replace("-", "");
-                        
+
 
                         // Convert from hexadecimal to decimal
                         if (int.TryParse(lastFourHex, System.Globalization.NumberStyles.HexNumber, null, out lastFourDecimalValue))
@@ -206,10 +187,10 @@ namespace BoatControl
                             {
                                 manufacturerData = lastFourDecimalValue.ToString();
                                 authenticatedBoatControlDevice = true;
-                                
+
                                 PairBtn.IsVisible = true;
                                 await DisplayAlert("Check Result", $"The last four characters of Manufacturer Data represent {lastFourDecimalValue} in decimal.", "OK");
-                                
+
                             }
                         }
                         else
@@ -230,10 +211,10 @@ namespace BoatControl
                                      $"Manufacturer Data: {advertisementData.ManufacturerData ?? "N/A"}\n" +
                                      $"OwnerID: {manufacturerData ?? "N/A"}\n" +
                                      $"Service UUIDs: {advertisementData.ServiceUuids ?? "N/A"}";
-                     
+
                     // Display the advertisement data
                     await DisplayAlert("Device Advertisement Data", message, "OK");
-                    
+
                 }
                 catch (Exception ex)
                 {
@@ -246,12 +227,10 @@ namespace BoatControl
         private async void PairDevice(object sender, EventArgs e)
         {
             string _id = "1311";
-            string _userToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IkRlbW8iLCJ1c2VySWQiOjExNDgsImVtYWlsIjoiRGVtbyIsImlzcyI6ImF1dGgiLCJpYXQiOjE3MzM4MzI3NTAsImV4cCI6MTc0OTM4NDc1MCwicm9sZXMiOlsiRGVtbyJdLCJkZXZpY2VzIjpbIkQxMTE1IiwiRDExMjUiLCJEMTEyOCIsIkQxMTI5IiwiRDExMzkiLCJEMTE0NiIsIkRlbW8iLCJEZW1vMSJdLCJqdGkiOiI4MGU3MjhjZWY4MWI0Mzk5YWY4NzQ1ZGUzMjI2NWQxZSJ9.YDteLhD_lmstIQwzv_veFW9du-EY6RfGNXQN5A8-p4KC6qk5M0NmJeIQHVgPTHcJ4U1Q3Y6hU3aeEuYTTaEYKnSbewIaCsb0HNCMIA7c4mPzYuXq08SsJLSTtEt0cuCu1axjzTL9qYz8IqFjgNPWdPNaelT4ShG-rZ1Hbb52vTM2T-Iuwl--i0ZtV3WHOG8Yj_T7HRS1uWynb3M4W_3wEEjnM1PvAhjTyjw1itTUoo_V_ulBc4ZpWWPyp-jx1Hp0m8wTV1uKFeCDZXBV4fhNK4Mz73adGzY2uVY_T5DY9cw-29DFtU0EX4eVwjzbZ1-j7u98NlyRepd_Mg-HsvQd6g\r\n ";
+            string _userToken = "3756099711ee42dc8d4cfb5145895568";
 
             if (DevicesListView.SelectedItem is IDevice selectedDevice)
             {
-                
-
                 bool result = await PairDeviceAsync(selectedDevice, _id, _userToken);
 
                 if (result)
@@ -271,8 +250,6 @@ namespace BoatControl
 
         private async Task<bool> PairDeviceAsync(IDevice device, string id, string userToken)
         {
-            id = "1311";
-            userToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IkRlbW8iLCJ1c2VySWQiOjExNDgsImVtYWlsIjoiRGVtbyIsImlzcyI6ImF1dGgiLCJpYXQiOjE3MzM4MzI3NTAsImV4cCI6MTc0OTM4NDc1MCwicm9sZXMiOlsiRGVtbyJdLCJkZXZpY2VzIjpbIkQxMTE1IiwiRDExMjUiLCJEMTEyOCIsIkQxMTI5IiwiRDExMzkiLCJEMTE0NiIsIkRlbW8iLCJEZW1vMSJdLCJqdGkiOiI4MGU3MjhjZWY4MWI0Mzk5YWY4NzQ1ZGUzMjI2NWQxZSJ9.YDteLhD_lmstIQwzv_veFW9du-EY6RfGNXQN5A8-p4KC6qk5M0NmJeIQHVgPTHcJ4U1Q3Y6hU3aeEuYTTaEYKnSbewIaCsb0HNCMIA7c4mPzYuXq08SsJLSTtEt0cuCu1axjzTL9qYz8IqFjgNPWdPNaelT4ShG-rZ1Hbb52vTM2T-Iuwl--i0ZtV3WHOG8Yj_T7HRS1uWynb3M4W_3wEEjnM1PvAhjTyjw1itTUoo_V_ulBc4ZpWWPyp-jx1Hp0m8wTV1uKFeCDZXBV4fhNK4Mz73adGzY2uVY_T5DY9cw-29DFtU0EX4eVwjzbZ1-j7u98NlyRepd_Mg-HsvQd6g";
 
             try
             {
@@ -290,57 +267,43 @@ namespace BoatControl
                 var rxCharacteristic = await service.GetCharacteristicAsync(Guid.Parse(BLE_CHARACTERISTIC_UUID_RX));
                 if (rxCharacteristic == null) throw new Exception("RX characteristic not found on the device.");
 
-                rxCharacteristic.ValueUpdated += (s, e) =>
-                {
-                    // Handle incoming data from the device
-                    var data = e.Characteristic.Value;
-                    var message = Encoding.UTF8.GetString(data, 0, data.Length);
-                    Console.WriteLine($"Received: {message}");
-                };
-                await rxCharacteristic.StartUpdatesAsync();
 
-                //// Step 1: Send initial pairing command
-
+                // Step 1: Send initial pairing command
                 var randomChallenge = Guid.NewGuid().ToString("N");
+                await DisplayAlert("Info", $"Succeeded sending challenge: {randomChallenge}", "OK");
                 var deviceMessage = DeviceMessage.GetTextMessage(randomChallenge, "auth");
- 
-                var textToSend = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage);
 
+                var textToSend = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage);
                 await txCharacteristic.WriteAsync(textToSend);
 
-                //// Step 2: Receive challenge response
-                //var (data, resultCode) = await rxCharacteristic.ReadAsync();
-                //if (resultCode != 0) throw new Exception("Failed to read challenge from the device.");
+                var response = await ReceiveBleMessageAsync(rxCharacteristic);
+                if (response.StartsWith("text"))
+                {
+                    Console.WriteLine("Pairing succeeded with response: " + response);
+                    await DisplayAlert("Info", $"Succeeded with 1st response: {response}", "OK");
+                    
+                }
+                var contraChallenge = ExtractChallenge(response); 
+                await DisplayAlert("Info", $"Contra Challenge: {contraChallenge}", "OK");
 
-                //var challengeMessage = Encoding.UTF8.GetString(data);
-                //if (!challengeMessage.StartsWith("response="))
-                //{
-                //    throw new Exception($"Unexpected response: {challengeMessage}");
-                //}
+                // Step 2 : SHA256 encrypted challenge response + contra-challenge
+                var randomChallenge2 = contraChallenge;
+                var expectedResponse = $"{contraChallenge}{userToken}";
+                await DisplayAlert("Info", $"Contra Challenge: {contraChallenge}", "OK");
+                var deviceMessage2 = DeviceMessage.GetTextMessage(contraChallenge, "auth");
 
-                //// Step 3: Compute response to challenge
-                //string challenge = ParseChallengeFromResponse(challengeMessage);
-                //string secret = "your-secret"; // Replace with the actual secret
-                //string expectedResponse = ComputeSha256(challenge + secret);
+                var textToSend2 = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage2);
+                await txCharacteristic.WriteAsync(textToSend2);
 
+                var response2 = await ReceiveBleMessageAsync(rxCharacteristic);
+                if (response2.StartsWith("text"))
+                {
+                    Console.WriteLine("Pairing succeeded with 2nd response: " + response2);
+                    await DisplayAlert("Info", $"Succeeded with 2nd response: {response2}", "OK");
+                    return true;
+                }
 
-                //// Step 4: Receive final acknowledgment
-                //var responseCommand = Encoding.UTF8.GetBytes(expectedResponse + "\n");
-                //await txCharacteristic.WriteAsync(responseCommand);
-
-                //// Step 5: Receive final acknowledgment
-                //var (ackData, ackResultCode) = await rxCharacteristic.ReadAsync();
-                //if (ackResultCode != 0) throw new Exception("Failed to read acknowledgment from the device.");
-
-                //var ackMessage = Encoding.UTF8.GetString(ackData);
-                //if (ackMessage.Equals("ok", StringComparison.OrdinalIgnoreCase))
-                //{
-                //    await DisplayAlert("Success", "Device successfully paired.", "OK");
-                //    return true;
-                //}
-
-                //await DisplayAlert("Failure", "Pairing failed. Response: " + ackMessage, "OK");
-                return false;
+                throw new Exception("Unexpected response from device: " + response2);
             }
             catch (Exception ex)
             {
@@ -349,24 +312,114 @@ namespace BoatControl
             }
         }
 
-        private string ParseChallengeFromResponse(string response)
+        private string ExtractChallenge(string response)
         {
-            // Extract the challenge string from the response
-            var match = Regex.Match(response, @"challenge=(\w+)");
-            if (!match.Success) throw new Exception("Challenge not found in response.");
-            return match.Groups[1].Value;
+            if (string.IsNullOrEmpty(response))
+            {
+                throw new ArgumentException("Response cannot be null or empty.", nameof(response));
+            }
+
+            // Define a regex to match the "challenge" key and capture its value
+            var challengeRegex = new Regex(@"challenge=([a-fA-F0-9]+)", RegexOptions.Compiled);
+
+            // Attempt to match the regex to the response string
+            var match = challengeRegex.Match(response);
+            if (match.Success && match.Groups.Count > 1)
+            {
+                return match.Groups[1].Value; // Return the captured value
+            }
+
+            throw new Exception("Challenge not found in the response.");
         }
 
-        private string ComputeSha256(string input)
+        private Dictionary<string, string> ParseResponse(string response)
         {
-            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+            // Create a dictionary to hold key-value pairs
+            var result = new Dictionary<string, string>();
+
+            // Split the response string into key-value pairs using '&' as a delimiter
+            var pairs = response.Split('&');
+            foreach (var pair in pairs)
             {
-                var bytes = Encoding.UTF8.GetBytes(input);
-                var hash = sha256.ComputeHash(bytes);
-                return BitConverter.ToString(hash).Replace("-", "").ToLower();
+                // Split each pair into key and value using '=' as a delimiter
+                var keyValue = pair.Split('=');
+                if (keyValue.Length == 2) // Ensure there is both a key and a value
+                {
+                    result[keyValue[0]] = keyValue[1]; // Add the key-value pair to the dictionary
+                }
+                else if (keyValue.Length == 1) // Handle keys with no value (e.g., "name=")
+                {
+                    result[keyValue[0]] = string.Empty;
+                }
+            }
+
+            return result;
+        }
+        private async Task<string> ReceiveBleMessageAsync(ICharacteristic rxCharacteristic, int timeoutMilliseconds = 5000)
+        {
+            var tcs = new TaskCompletionSource<string>();
+
+            // Define a timeout for waiting for BLE responses
+            var cts = new CancellationTokenSource();
+            cts.CancelAfter(timeoutMilliseconds);
+
+            // Buffer to accumulate received data
+            StringBuilder messageBuilder = new StringBuilder();
+
+            // Event handler for receiving data
+            EventHandler<CharacteristicUpdatedEventArgs> handler = (s, e) =>
+            {
+                try
+                {
+                    // Get the data received in the BLE notification
+                    var data = e.Characteristic.Value;
+                    var messagePart = Encoding.UTF8.GetString(data, 0, data.Length);
+
+                    // Append the received chunk to the buffer
+                    Console.WriteLine($"Received chunk: {messagePart}");
+                    messageBuilder.Append(messagePart);
+
+                    // Check if we have received the entire message
+                    // You can use a specific delimiter or check for a known ending pattern
+                    if (messagePart.Contains("challenge="))  // Modify this based on your message structure
+                    {
+                        // Complete message received
+                        Console.WriteLine($"Complete message received: {messageBuilder.ToString()}");
+                        tcs.TrySetResult(messageBuilder.ToString()); // Set the result when the full message is received
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error decoding message: {ex.Message}");
+                    tcs.TrySetException(ex); // In case of an error, set exception
+                }
+            };
+
+            // Subscribe to the characteristic's ValueUpdated event
+            rxCharacteristic.ValueUpdated += handler;
+
+            try
+            {
+                await rxCharacteristic.StartUpdatesAsync(); // Start listening for notifications
+
+                // Wait for the message or timeout
+                using (cts.Token.Register(() => tcs.TrySetCanceled()))  // Cancel after timeout
+                {
+                    return await tcs.Task; // Await the TaskCompletionSource
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during BLE message reception: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                // Clean up: unsubscribe and stop updates
+                rxCharacteristic.ValueUpdated -= handler;
+                await rxCharacteristic.StopUpdatesAsync();
             }
         }
-
         private BluetoothDeviceInfo GetAdvertisementData(IDevice device)
         {
             var info = new BluetoothDeviceInfo
