@@ -91,7 +91,7 @@ namespace BoatControl.Communication.Connections.Ble
 
                 if (_bleReset != null)
                 {
-                    if ((await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token)) == 0)
+                    if ((await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token)) != 0)
                         throw new NoConnectionException("Could not reset connection");
                 }
 
@@ -322,7 +322,7 @@ namespace BoatControl.Communication.Connections.Ble
 
                 if(_bleReset != null)
                 {
-                    if (await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token) == 0)
+                    if (await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token) != 0)
                         throw new NoConnectionException("Could not reset connection");
                 }
 
@@ -479,7 +479,7 @@ namespace BoatControl.Communication.Connections.Ble
 
                 if (_bleReset != null)
                 {
-                    if (await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token) == 0)
+                    if (await _bleReset.WriteAsync(new byte[] { 49 }, _disconnectTokenSource.Token) != 0)
                         throw new NoConnectionException("Could not reset connection");
                 }
 

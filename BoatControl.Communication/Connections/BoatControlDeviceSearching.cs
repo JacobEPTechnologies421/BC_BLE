@@ -30,15 +30,15 @@ namespace BoatControl.Communication.Connections
 
         public void StartSearching(Action<AFoundDevice> device, Action<bool> cloudConnectedResponse)
         {
-            _broadcastSearch.StartSearching(device);
-            _cloudDeviceSearch.StartSearching(_user, device, cloudConnectedResponse);
+            //_broadcastSearch.StartSearching(device);
+            //_cloudDeviceSearch.StartSearching(_user, device, cloudConnectedResponse);
             _bleSearch.StartSearching(_user, device);
         }
 
         public void StopSearching()
         {
-            _broadcastSearch.StopSearching();
-            _cloudDeviceSearch.StopSearching();
+            //_broadcastSearch.StopSearching();
+            //_cloudDeviceSearch.StopSearching();
             _bleSearch.StopSearching();
         }
     }

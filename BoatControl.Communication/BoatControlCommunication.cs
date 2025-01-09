@@ -28,6 +28,7 @@ namespace BoatControl.Communication
         public event IsCloudConnectedChangeDelegate IsCloudConnectedChangeEvent;
         public event ConnectionChangeDelegate OnConnectionChange;
         public event DeviceMessageDelegate OnDeviceMessage;
+        public event DevicesChanged OnDevicesChanged;
 
         public IDictionary<DeviceInfo, IDeviceConnectionManager> Devices { get; } = new ConcurrentDictionary<DeviceInfo, IDeviceConnectionManager>();
 
@@ -83,6 +84,7 @@ namespace BoatControl.Communication
             {
                 deviceConn.SetFoundBle(bleDevice);
             }
+            OnDevicesChanged?.Invoke();
         }
 
         public void Dispose()

@@ -63,7 +63,7 @@ namespace BoatControl.Logic
                     var resultTask = characteristic.WriteAsync(partialMessageBytes, cancellationToken);
                     await Task.WhenAny(new[] { resultTask, Task.Delay(_bleCommunicationTimeout, cancellationToken) });
 
-                    if (!resultTask.IsCompleted || resultTask.Result == 0)
+                    if (!resultTask.IsCompleted || resultTask.Result != 0)
                     {
                         _logger.LogDebug("App -> Device (BLE): {message}", messageString);
                         _logger.LogError("App -> BLE: Failed sending: {partialMessageString}", partialMessageString);
@@ -105,7 +105,7 @@ namespace BoatControl.Logic
                         var resultTask = characteristic.WriteAsync(partialMessageBytes, cancellationToken);
                         await Task.WhenAny(new[] { resultTask, Task.Delay(_bleCommunicationTimeout, cancellationToken) });
 
-                        if (!resultTask.IsCompleted || resultTask.Result == 0)
+                        if (!resultTask.IsCompleted || resultTask.Result != 0)
                         {
                             _logger.LogError("App -> BLE: Failed sending: {message}", message.Message);
                             throw new CoultNotWriteBleException();

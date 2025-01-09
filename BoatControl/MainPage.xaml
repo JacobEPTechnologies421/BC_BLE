@@ -8,22 +8,18 @@
         <Label Text="Nearby Bluetooth Devices"
                FontSize="20"
                HorizontalOptions="Center" />
-        <ListView x:Name="DevicesListView"
-                  ItemSelected="OnDeviceSelected">
+        <ListView x:Name="DevicesListView" ItemSelected="OnDeviceSelected">
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <TextCell Text="{Binding Name}" />
+                    <TextCell Text="{Binding Details}" />
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
 
-        <Button Text="Start Scanning"
-                Clicked="OnStartScanningClicked"/>
-
         <Button Text="Pair"
                 x:Name="PairBtn"
-                IsVisible="False"
-                Clicked="PairDevice"/>
+                IsVisible="True"
+                Clicked="OnSeeRelaysClick"/>
     </StackLayout>
 
 </ContentPage>

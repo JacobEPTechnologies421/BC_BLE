@@ -168,6 +168,7 @@ namespace BoatControl.Communication.Connections.Ble.Searching
                 if (!_isScanning)
                 {
                     _logger.LogDebug("Start scanning");
+
                     _isScanning = true;
                     _adapter.StartScanningForDevicesAsync().Wait();
                 }
