@@ -182,7 +182,7 @@ namespace BoatControl
                 {
                     if (_communication.Devices.TryGetValue(device, out var connectionManager))
                     {
-                        var message = DeviceMessage.GetTextMessage("relay list");
+                        var message = DeviceMessage.GetTextMessage("wifi list");
                         var result = await connectionManager.SendAsync(message);
 
                     }

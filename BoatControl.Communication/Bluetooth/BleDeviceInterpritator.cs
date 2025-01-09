@@ -15,7 +15,7 @@ namespace BoatControl.Logic
     public class BLEDeviceMessageInterpritator : DeviceMessageInterpritator
     {
 
-        private static TimeSpan _bleCommunicationTimeout = TimeSpan.FromSeconds(5);
+        private static TimeSpan _bleCommunicationTimeout = TimeSpan.FromSeconds(30);
 
         public delegate void DownloadProgress(DeviceMessageProgress progress);
         public delegate void DeviceMessageReceived(DeviceMessage deviceMessage);
