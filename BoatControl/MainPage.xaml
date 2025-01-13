@@ -1,25 +1,44 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="BoatControl.MainPage">
 
-    <StackLayout Padding="30">
-        
-        <Label Text="Nearby Bluetooth Devices"
+
+    <ScrollView>
+        <VerticalStackLayout>
+            
+            <Label Text="Nearby Bluetooth Devices"
                FontSize="20"
                HorizontalOptions="Center" />
-        <ListView x:Name="DevicesListView" ItemSelected="OnDeviceSelected">
-            <ListView.ItemTemplate>
-                <DataTemplate>
-                    <TextCell Text="{Binding Details}" />
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
+            
+            <ListView x:Name="DevicesListView" ItemSelected="OnDeviceSelected">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <TextCell Text="{Binding Details}" />
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
 
-        <Button Text="Pair"
+            <Button Text="Pair"
                 x:Name="PairBtn"
                 IsVisible="True"
                 Clicked="OnSeeRelaysClick"/>
-    </StackLayout>
+
+            <Button Text="Wifi List"
+                x:Name="WifiList"
+                IsVisible="True"
+                Clicked="OnSeeWifiSearch"/>
+
+            <Button Text="Device Info"
+                x:Name="DeviceInfo"
+                IsVisible="True"
+                Clicked="OnSeeDeviceInfo"/>
+
+            <HybridWebView x:Name="hybridWebView"
+                        RawMessageReceived="OnHybridWebViewRawMessageReceived"
+                        Grid.Row="1" />
+
+        </VerticalStackLayout>
+    </ScrollView>
 
 </ContentPage>
