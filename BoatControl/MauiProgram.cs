@@ -1,4 +1,4 @@
-﻿using BoatControl.Communication;
+using BoatControl.Communication;
 using BoatControl.Communication.Connections.Tcp.Searching;
 using BoatControl.Communication.Storage;
 using BoatControl.Storage;
@@ -24,10 +24,10 @@ namespace BoatControl
             builder.Services.AddSingleton<IBroadcastSearch, ReplaceMeWithATcpListener>();
             builder.Services.AddSingleton<BoatControlCommunication>();
             builder.Services.TryAddSingleton<IPersistedStorage, MauiStorage>();
+            builder.Services.AddHybridWebViewDeveloperTools();
 
 
 #if DEBUG
-        builder.Services.AddHybridWebViewDeveloperTools();
         builder.Logging.AddDebug();            
 #endif
 
