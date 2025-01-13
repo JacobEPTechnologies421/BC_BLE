@@ -5,6 +5,9 @@ using BoatControl.Communication;
 using DeviceInfo = BoatControl.Communication.Models.DeviceInfo;
 using BoatControl.Communication.Helpers;
 using BoatControl.Communication.Connections;
+using Microsoft.Maui.Controls;
+using System.Text.Json;
+
 
 namespace BoatControl
 {
@@ -31,12 +34,26 @@ namespace BoatControl
 
         private readonly BoatControlCommunication _communication;
 
+        List<string> nearbyBC = new List<string>();
+
+        bool locationPermissionGranted = false;
+        bool bluetoothPermissionGranted = false;
+        bool foundBoatControlDevices = false;
+        bool authenticatedBoatControlDevice = false;
+        bool pairingBoatControlDeviceComplete = false;
+        bool registerdBoatControlDevice = false;
+
+        string _bearerToken;
+        string _id;
+        string _token;
+
         public MainPage(BoatControlCommunication communication)
         {
             InitializeComponent();  // Initialize UI components first
-
+            RequestPermission();  // Request permissions after UI initialization
             communication.OnDevicesChanged += Communication_OnDevicesChanged;
             DevicesListView.ItemsSource = _devices;
+            hybridWebView.SetInvokeJavaScriptTarget(this);
 
 
             communication.Start(new Communication.Models.AuthenticationUser()
@@ -52,11 +69,132 @@ namespace BoatControl
 
         }
 
+        private async void RequestPermission()
+        {
+            try
+            {
+                // Request Location Permission
+                var locationStatus = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
+                if (locationStatus == PermissionStatus.Granted)
+                {
+                    locationPermissionGranted = true;
+                }
+                else
+                {
+                    await DisplayAlert("Permission Denied", "Location permission is required to scan for Bluetooth devices.", "OK");
+                }
+
+                // Request Bluetooth Permissions (for Android and Windows)
+                if (locationPermissionGranted)
+                {
+                    // On Android and Windows, Bluetooth permission is required to scan for nearby devices
+                    var bluetoothStatus = await Permissions.RequestAsync<Permissions.Bluetooth>();
+                    if (bluetoothStatus == PermissionStatus.Granted)
+                    {
+                        bluetoothPermissionGranted = true;
+                    }
+                    else
+                    {
+                        await DisplayAlert("Permission Denied", "Bluetooth permission is required to scan for devices.", "OK");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await DisplayAlert("Error", $"An error occurred while requesting permissions: {ex.Message}", "OK");
+            }
+        }
+
+        private void OnSendMessageButtonClicked(object sender, EventArgs e)
+        {
+            hybridWebView.SendRawMessage($"Hello from C#!");
+        }
+
+        private async void OnHybridWebViewRawMessageReceived(object sender, HybridWebViewRawMessageReceivedEventArgs e)
+        {
+            await DisplayAlert("Raw Message Received", e.Message, "OK");
+        }
+
+        public void DoSyncWork()
+        {
+            Console.WriteLine("DoSyncWork");
+        }
+
+        public void DoSyncWorkParams(int i, string s)
+        {
+            Console.WriteLine($"DoSyncWorkParams: {i}, {s}");
+        }
+
+        public void SetUserParams(string Legacytoken, string Ownerid, string Bearertoken)
+        {
+            _bearerToken = Bearertoken;
+            _id = Ownerid;
+            _token = Legacytoken;
+        }
+
+        public string DoSyncWorkReturn()
+        {
+            Console.WriteLine("DoSyncWorkReturn");
+            return "Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!";
+        }
+
+        public async Task<string> GetDeviceInfo()
+        {
+            Console.WriteLine("DoSyncWorkReturn");
+            try
+            {
+                if (DevicesListView.SelectedItem is DeviceInfo device)
+                {
+                    if (_communication.Devices.TryGetValue(device, out var connectionManager))
+                    {
+                        var message = DeviceMessage.GetTextMessage("device info");
+                        var result = await connectionManager.SendAsync(message);
+
+                        var version = result.Message.Trim().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .First(a => a.StartsWith("version"))
+                            .Split(' ').Last();
+
+
+                        return version;
+                        //return JsonSerializer.Serialize(new { Message = result.Message });
+                        //return JsonSerializer.Serialize(new { Message = "Test Device Info" });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info." });
+        }
+
+        public SyncReturn DoSyncWorkParamsReturn(int i, string s)
+        {
+            Console.WriteLine($"DoSyncWorkParamReturn: {i}, {s}");
+            return new SyncReturn
+            {
+                Message = "Hello from C#!" + s,
+                Value = i
+            };
+        }
+
+        public class SyncReturn
+        {
+            public string? Message { get; set; }
+            public int Value { get; set; }
+        }
+
         private void _communication_OnDeviceMessage(Communication.Connections.IDeviceConnectionManager connectionManager, DeviceMessage message)
         {
             // This is for broadcasting messages etc., like n2k :)
             Console.WriteLine($"{message.Message}");
+            DisplayAlert("Info", $"{message.Message}", "Cancel");
+        }
 
+        public string SetInformation(string id, string bearertoken, string token)
+        {
+            Console.WriteLine("DoSyncWorkReturn");
+            return "Hello from C#!";
         }
 
         private void _communication_OnDevicesChanged()
@@ -64,21 +202,21 @@ namespace BoatControl
 
         }
         
-
         private void Communication_OnDevicesChanged()
         {
             MainThread.InvokeOnMainThreadAsync(() =>
             {
                 _devices.Clear();
+
                 foreach (var device in _communication.Devices)
                 {
                     _devices.Add(new ExtendedDeviceInfo(device.Key, device.Value));
+                    nearbyBC.Add(device.ToString());
                 }
             }).Wait();
         }
 
-
-        private async void OnDeviceSelected(object sender, SelectedItemChangedEventArgs e)
+        public async void OnDeviceSelected(object sender, SelectedItemChangedEventArgs e)
         {
             if (e.SelectedItem is DeviceInfo device)
             {
@@ -97,8 +235,7 @@ namespace BoatControl
             }
         }
 
-
-        private async void OnSeeRelaysClick(object sender, EventArgs e)
+        public async void OnSeeRelaysClick(object sender, EventArgs e)
         {
             try
             {
@@ -106,7 +243,7 @@ namespace BoatControl
                 {
                     if (_communication.Devices.TryGetValue(device, out var connectionManager))
                     {
-                        var message = DeviceMessage.GetTextMessage("wifi list");
+                        var message = DeviceMessage.GetTextMessage("relay set 5 1");
                         var result = await connectionManager.SendAsync(message);
 
                     }
@@ -118,6 +255,53 @@ namespace BoatControl
                 Console.WriteLine(ex.Message);
             }
         }
+
+        public async void OnSeeDeviceInfo(object sender, EventArgs e)
+        {
+            try
+            {
+                if (DevicesListView.SelectedItem is DeviceInfo device)
+                {
+                    if (_communication.Devices.TryGetValue(device, out var connectionManager))
+                    {
+                        var message = DeviceMessage.GetTextMessage("device info");
+                        var result = await connectionManager.SendAsync(message);
+
+                        await DisplayAlert("Wifi List", $"{result.Message}", "Ok");
+
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        public async void OnSeeWifiSearch(object sender, EventArgs e)
+        {
+            try
+            {
+                if (DevicesListView.SelectedItem is DeviceInfo device)
+                {
+                    if (_communication.Devices.TryGetValue(device, out var connectionManager))
+                    {
+                        var message = DeviceMessage.GetTextMessage("wifi list");
+                        var result = await connectionManager.SendAsync(message);
+
+                        await DisplayAlert("Wifi List", $"{result.Message}", "Ok");
+
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
     }
 }
 
