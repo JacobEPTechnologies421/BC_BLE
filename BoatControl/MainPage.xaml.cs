@@ -63,10 +63,8 @@ namespace BoatControl
                 UserToken = "3756099711ee42dc8d4cfb5145895568"
             });
             this._communication = communication;
-
             this._communication.OnDevicesChanged += _communication_OnDevicesChanged;
             this._communication.OnDeviceMessage += _communication_OnDeviceMessage;
-
         }
 
         private async void RequestPermission()
@@ -138,35 +136,67 @@ namespace BoatControl
             return "Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!-Hello from C#!";
         }
 
-        public async Task<string> GetDeviceInfo()
+        //public async Task<string> GetDeviceInfo()
+        //{
+        //    Console.WriteLine("DoSyncWorkReturn");
+        //    try
+        //    {
+        //        if (DevicesListView.SelectedItem is DeviceInfo device)
+        //        {
+        //            if (_communication.Devices.TryGetValue(device, out var connectionManager))
+        //            {
+        //                var message = DeviceMessage.GetTextMessage("device info");
+        //                var result = await connectionManager.SendAsync(message);
+        //                var response = new
+        //                {
+        //                    Message = result.Message,
+        //                };
+        //            }
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Console.WriteLine(ex.Message);
+        //    }
+        //    return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info." });
+        //}
+
+        public async Task<string> GetDeviceInfo(string deviceId)
         {
-            Console.WriteLine("DoSyncWorkReturn");
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {deviceId}");
+
             try
             {
-                if (DevicesListView.SelectedItem is DeviceInfo device)
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Name.Contains(deviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(deviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
                 {
-                    if (_communication.Devices.TryGetValue(device, out var connectionManager))
+                    var message = DeviceMessage.GetTextMessage("device info");
+                    var result = await connectionManager.SendAsync(message);
+
+                    var response = new
                     {
-                        var message = DeviceMessage.GetTextMessage("device info");
-                        var result = await connectionManager.SendAsync(message);
+                        Message = result.Message,
+                    };
 
-                        var version = result.Message.Trim().Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                            .First(a => a.StartsWith("version"))
-                            .Split(' ').Last();
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
 
-
-                        return version;
-                        //return JsonSerializer.Serialize(new { Message = result.Message });
-                        //return JsonSerializer.Serialize(new { Message = "Test Device Info" });
-                    }
+                    // Return the serialized JSON response
+                    //return JsonSerializer.Serialize(response);
+                    return result.Message;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
             }
-            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info." });
+
+            // Return a failure message if no matching device or an error occurred
+            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info for ID: " + deviceId });
         }
+
 
         public SyncReturn DoSyncWorkParamsReturn(int i, string s)
         {
@@ -207,11 +237,13 @@ namespace BoatControl
             MainThread.InvokeOnMainThreadAsync(() =>
             {
                 _devices.Clear();
+                nearbyBC.Clear();
 
                 foreach (var device in _communication.Devices)
                 {
                     _devices.Add(new ExtendedDeviceInfo(device.Key, device.Value));
                     nearbyBC.Add(device.ToString());
+                    nearbyBC.Add($"{device.Key}: {device.Value}"); // Format as needed
                 }
             }).Wait();
         }
@@ -267,7 +299,11 @@ namespace BoatControl
                         var message = DeviceMessage.GetTextMessage("device info");
                         var result = await connectionManager.SendAsync(message);
 
-                        await DisplayAlert("Wifi List", $"{result.Message}", "Ok");
+                        var response = new
+                        {
+                            Message = result.Message,
+                        };
+                        await DisplayAlert("Wifi List", $"{response}", "Ok");
 
                     }
                 }
@@ -304,5 +340,11 @@ namespace BoatControl
 
     }
 }
+
+
+
+
+
+
 
 
