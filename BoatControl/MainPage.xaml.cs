@@ -161,6 +161,7 @@ namespace BoatControl
         //    return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info." });
         //}
 
+        
         public string GetDeviceInfo(string deviceId)
         {
             var newDeviceId = "D1150";
@@ -174,7 +175,7 @@ namespace BoatControl
 
                 if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
                 {
-                    var message = DeviceMessage.GetTextMessage("wifi list");
+                    var message = DeviceMessage.GetTextMessage("device info");
 
                     var result = connectionManager.SendAsync(message).Result;
 
@@ -185,8 +186,9 @@ namespace BoatControl
 
                     Console.WriteLine($"Device Info Retrieved: {result.Message}");
 
-                    // Return the serialized JSON response
-                    return JsonSerializer.Serialize(response);
+                    //Return the serialized JSON response
+                   var result = JsonSerializer.Serialize(response);
+                    return result;
                 }
             }
             catch (Exception ex)
