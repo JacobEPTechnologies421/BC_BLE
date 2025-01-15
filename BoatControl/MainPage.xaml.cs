@@ -161,20 +161,22 @@ namespace BoatControl
         //    return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info." });
         //}
 
-        public async Task<string> GetDeviceInfo(string deviceId)
+        public string GetDeviceInfo(string deviceId)
         {
-            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {deviceId}");
+            var newDeviceId = "D1150";
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
 
             try
             {
                 // Match the device ID in the _communication.Devices dictionary
-                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Name.Contains(deviceId));
-                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(deviceId));
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
 
                 if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
                 {
-                    var message = DeviceMessage.GetTextMessage("device info");
-                    var result = await connectionManager.SendAsync(message);
+                    var message = DeviceMessage.GetTextMessage("wifi list");
+
+                    var result = connectionManager.SendAsync(message).Result;
 
                     var response = new
                     {
@@ -184,8 +186,7 @@ namespace BoatControl
                     Console.WriteLine($"Device Info Retrieved: {result.Message}");
 
                     // Return the serialized JSON response
-                    //return JsonSerializer.Serialize(response);
-                    return result.Message;
+                    return JsonSerializer.Serialize(response);
                 }
             }
             catch (Exception ex)
