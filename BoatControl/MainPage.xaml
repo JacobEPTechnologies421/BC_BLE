@@ -4,41 +4,11 @@
              x:Class="BoatControl.MainPage">
 
 
-    <ScrollView>
-        <VerticalStackLayout>
-            
-            <Label Text="Nearby Bluetooth Devices"
-               FontSize="20"
-               HorizontalOptions="Center" />
-            
-            <ListView x:Name="DevicesListView" ItemSelected="OnDeviceSelected">
-                <ListView.ItemTemplate>
-                    <DataTemplate>
-                        <TextCell Text="{Binding Details}" />
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
 
-            <Button Text="Pair"
-                x:Name="PairBtn"
-                IsVisible="True"
-                Clicked="OnSeeRelaysClick"/>
-
-            <Button Text="Wifi List"
-                x:Name="WifiList"
-                IsVisible="True"
-                Clicked="OnSeeWifiSearch"/>
-
-            <Button Text="Device Info"
-                x:Name="DeviceInfo"
-                IsVisible="True"
-                Clicked="OnSeeDeviceInfo"/>
-
-            <HybridWebView x:Name="hybridWebView"
-                        RawMessageReceived="OnHybridWebViewRawMessageReceived"
-                        Grid.Row="1" />
-
-        </VerticalStackLayout>
-    </ScrollView>
-
+    <Grid RowDefinitions="Auto,*"
+      ColumnDefinitions="*">
+        <HybridWebView x:Name="hybridWebView"
+                   RawMessageReceived="OnHybridWebViewRawMessageReceived"
+                   Grid.Row="2" />
+    </Grid>
 </ContentPage>
