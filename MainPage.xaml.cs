@@ -1,50 +1,59 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Plugin.BLE;
-using Plugin.BLE.Abstractions.Contracts;
-using Plugin.BLE.Abstractions.EventArgs;
-using Microsoft.Maui.ApplicationModel;
-using Plugin.BLE.Abstractions;
-using Plugin.BLE.Abstractions.Extensions;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using Microsoft.Maui.Controls;
-using System.Text.RegularExpressions;
-using System.Xml.Linq;
 using BoatControl.Shared.Messaging;
-using Microsoft.Extensions.Logging.Abstractions;
+using BoatControl.Communication;
+using DeviceInfo = BoatControl.Communication.Models.DeviceInfo;
+using BoatControl.Communication.Helpers;
+using BoatControl.Communication.Connections;
+using Microsoft.Maui.Controls;
+using System.Text.Json;
+using BoatControl.Communication.Storage;
+using System.Net;
+using System.Text.RegularExpressions;
+using System.Text;
+using System.Security.Cryptography;
+using Microsoft.Maui.Devices.Sensors;
+
 
 namespace BoatControl
 {
-    public class MyDeviceMessageInterpritator : DeviceMessageInterpritator
+    public class ExtendedDeviceInfo : DeviceInfo
     {
-        public MyDeviceMessageInterpritator() : base(NullLogger<DeviceMessageInterpritator>.Instance)
-        {
+        public bool IsConnected { get; set; }
 
-        }
-
-        // Make GetMessageString public
-        public byte[] GetMessageStringAsBytes(DeviceMessage message)
+        public string Details { get; set; }
+        public ExtendedDeviceInfo(DeviceInfo deviceInfo, IDeviceConnectionManager deviceConnectionManager)
         {
-            var data = base.GetMessageString(message);
-            return Encoding.UTF8.GetBytes(data);
+            this.Number = deviceInfo.Number;
+            this.Name = deviceInfo.Name;
+            this.Version = deviceInfo.Version;
+            this.IsConnected = deviceConnectionManager.IsConnected;
+
+            this.Details = $"{deviceInfo.Number} - {deviceInfo.Name} - {deviceInfo.Version} - {"Connected: " + deviceConnectionManager.IsConnected}";
         }
     }
 
-    public interface IWifiScanner
+    public static class StringExtensions
     {
-        Task<List<WifiNetwork>> ScanAsync();
+        public static string Sha256(this string str)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(str);
+
+            using (SHA256 sha256 = SHA256.Create()) // Updated to use SHA256.Create()
+            {
+                byte[] hash = sha256.ComputeHash(bytes);
+                return Convert.ToHexString(hash).ToLower(); // More efficient way to convert to hex
+            }
+        }
     }
 
     public partial class MainPage : ContentPage
     {
-        private readonly IAdapter _adapter;
-        private readonly ObservableCollection<IDevice> _devices;
+        private readonly ObservableCollection<ExtendedDeviceInfo> _devices = new ObservableCollection<ExtendedDeviceInfo>();
 
-        private MyDeviceMessageInterpritator _deviceMessageInterpritator = new MyDeviceMessageInterpritator();
+        private readonly BoatControlCommunication _communication;
 
+        List<string> nearbyBC = new List<string>();
 
         bool locationPermissionGranted = false;
         bool bluetoothPermissionGranted = false;
@@ -53,27 +62,28 @@ namespace BoatControl
         bool pairingBoatControlDeviceComplete = false;
         bool registerdBoatControlDevice = false;
 
+        double latitude = 0;
+        double longitude = 0;
 
-        string bcName;
-        string bcNo;
+        //string _bearerToken="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IkVQVF9UZXN0IiwidXNlcklkIjoxMzExLCJlbWFpbCI6IkJvYXRDb250cm9sQGVwdGVjaG5vbG9naWVzLmRlIiwiaXNzIjoiYXV0aCIsImlhdCI6MTczNjQ1NTgyMCwiZXhwIjoxNzUyMDA3ODIwLCJyb2xlcyI6WyJBZG1pbiIsIkRldmVsb3BlciIsIlNvZnR3YXJlRW5naW5lZXJzIl0sImRldmljZXMiOlsiRDExNTAiLCJEMTE1MyIsIkQxMTU1IiwiRDExNTYiLCJEMTE1NyIsIkQxMTU5Il0sImp0aSI6IjUxNGEzMTBjMzE0ODQ1YTFhZjhiMmU5NzgwMDUyZDY3In0.byIihxpUBlnATnFSFMW8Pvdkc-ZyH1ppgT86elBscD81Zxr0Kog79W2E6C7CQgYfos_jaFpIdQ8PbldQhCWe7-rs4y7zOKHhjMycHtMxzOzpps6pKi-Kqr-izS76o_QOVNJGxZvvwzGZUK4pBorOyGwUwlFf67UBqo0s7bREuTwdMG-WqNFt31AZhu_kGXB1mvQmxY9P_xdLhTItD3QsfTT4MxKH7Zey8B45FplIC2uPKJfHmt9ph6-zuc-L1ysXkv4tHJu_V_nLWvoYA_7I0ELOTlc1uDlyRqi9EPSOgflWLp4yRKzADRmQJ8D8DW681lgE-1yg8_U2UU9piR6gpA";
+        string _bearerToken = "";
+        int _id=0;
+        string _token= "";
 
-        // Define your UUIDs
-        private static readonly string BLE_SERVICE_UUID = "02FB504B-B9E9-4DFE-90F3-CF60AB55A8E0";
-        private static readonly string BLE_CHARACTERISTIC_UUID_TX = "CFA58E3B-AB9F-48B1-B27F-00088952CA86";
-        private static readonly string BLE_CHARACTERISTIC_UUID_RX = "0EAF8BF5-2D2E-4602-A72A-0D2B051874A5";
-        private static readonly string BLE_CHARACTERISTIC_UUID_RESET = "119367EB-67AB-4192-93E5-D3ECA3D0FEE7";
-
-        private static readonly string BC_SECRET = "c1278456931740f0a78775565d6c881fdd5c7d75130b4d2d92901d2e3fd145efabc755f4dd3d4a95b1bf200af8ea93cb";
-
-        public MainPage()
+        public MainPage(BoatControlCommunication communication)
         {
             InitializeComponent();  // Initialize UI components first
-            //hybridWebView.SetInvokeJavaScriptTarget(this);
-            _adapter = CrossBluetoothLE.Current.Adapter;
-            _devices = new ObservableCollection<IDevice>();
-            DevicesListView.ItemsSource = _devices;
-            //LoadWifiNetworks();
             RequestPermission();  // Request permissions after UI initialization
+            _communication = communication;
+
+            // Bind UI components
+            //DevicesListView.ItemsSource = _devices;
+            hybridWebView.SetInvokeJavaScriptTarget(this);
+
+            // Subscribe to device change events
+            _communication.OnDevicesChanged += Communication_OnDevicesChanged;
+            _communication.OnDevicesChanged += _communication_OnDevicesChanged;
+            _communication.OnDeviceMessage += _communication_OnDeviceMessage;
         }
 
         private async void RequestPermission()
@@ -81,14 +91,22 @@ namespace BoatControl
             try
             {
                 // Request Location Permission
-                var locationStatus = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
-                if (locationStatus == PermissionStatus.Granted)
+                var location = await Geolocation.GetLastKnownLocationAsync();
+
+                if (location == null)
                 {
-                    locationPermissionGranted = true;
+                    // If no cached location is available, get a new one
+                    location = await Geolocation.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Medium));
+                }
+
+                if (location != null)
+                {
+                    latitude = location.Latitude;
+                    longitude = location.Longitude;
                 }
                 else
                 {
-                    await DisplayAlert("Permission Denied", "Location permission is required to scan for Bluetooth devices.", "OK");
+                    await DisplayAlert("Location Error", "Unable to get location.", "OK");
                 }
 
                 // Request Bluetooth Permissions (for Android and Windows)
@@ -112,371 +130,503 @@ namespace BoatControl
             }
         }
 
-        private async void OnStartScanningClicked(object sender, EventArgs e)
+        private void OnSendMessageButtonClicked(object sender, EventArgs e)
         {
-            _devices.Clear(); // Clear old devices
-            await ScanForDevicesAsync();
+            hybridWebView.SendRawMessage($"Hello from C#!");
         }
 
-        // Scan for nearby Bluetooth devices
-        private async Task ScanForDevicesAsync()
+        private async void OnHybridWebViewRawMessageReceived(object sender, HybridWebViewRawMessageReceivedEventArgs e)
         {
-            // Ensure Bluetooth is enabled
-            var state = CrossBluetoothLE.Current.State;
-            if (state != BluetoothState.On)
-            {
-                await DisplayAlert("Error", "Bluetooth is not enabled", "OK");
-                return;  // Stop scanning if Bluetooth is off
-            }
+            await DisplayAlert("Raw Message Received", e.Message, "OK");
+        }
 
-            // Start scanning
-            _adapter.DeviceDiscovered += (s, args) =>
+        public void DoSyncWork()
+        {
+            Console.WriteLine("DoSyncWork");
+        }
+
+        public void DoSyncWorkParams(int i, string s)
+        {
+            Console.WriteLine($"DoSyncWorkParams: {i}, {s}");
+        }
+
+        public string DoSyncWorkReturn()
+        {
+            Console.WriteLine("DoSyncWorkReturn");
+            return $"{_id}+{_token}";
+        }
+
+        public SyncReturn DoSyncWorkParamsReturn(int i, string s)
+        {
+            Console.WriteLine($"DoSyncWorkParamReturn: {i}, {s}");
+            return new SyncReturn
             {
-                // Check if the device name starts with "BC-" and add it to the list
-                if (!string.IsNullOrEmpty(args.Device.Name) && args.Device.Name.StartsWith("BC-"))
-                {
-                    if (!_devices.Contains(args.Device))
-                    {
-                        _devices.Add(args.Device);
-                        foundBoatControlDevices = true;
-                    }
-                }
+                Message = "Hello from C#!" + s,
+                Value = i
             };
-
-            try
-            {
-                await _adapter.StartScanningForDevicesAsync();
-            }
-            catch (Exception ex)
-            {
-                await DisplayAlert("Error", $"Scanning failed: {ex.Message}", "OK");
-            }
         }
 
-        private async void OnDeviceSelected(object sender, SelectedItemChangedEventArgs e)
+        public class SyncReturn
         {
-            if (e.SelectedItem is IDevice device)
+            public string? Message { get; set; }
+            public int Value { get; set; }
+        }
+
+
+        //BC Fx
+        public void SetUserParams(string bearerToken, int ownerId, string legacyToken)
+        {
+            // Set user parameters
+            _bearerToken = bearerToken;
+            _id = ownerId;
+            _token = legacyToken;
+
+            // Start communication once parameters are set
+            StartCommunication();
+        }
+
+        public string GetDeviceList()
+        {
+            var DeviceList = JsonSerializer.Serialize(_communication.Devices.Values);
+            return DeviceList;
+        }
+
+
+        public void PairDevice(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+            var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+            if (_communication.Devices.TryGetValue(device, out var connectionManager))
             {
-                try
-                {
-                    // Attempt to retrieve advertisement records
-                    var advertisementData = GetAdvertisementData(device);
-                    bcName = advertisementData.Name;
-                    bcNo = advertisementData.DeviceNo;
-
-
-                    // Extract Manufacturer Data and process it
-                    string manufacturerData = advertisementData.ManufacturerData ?? "N/A";
-                    int lastFourDecimalValue = -1; // Default value if conversion fails
-
-                    if (manufacturerData != "N/A" && manufacturerData.Length >= 11)
-                    {
-                        // Get the last four characters (2 bytes in hexadecimal)
-                        string lastFourHex = manufacturerData.Substring(manufacturerData.Length - 8, 8).Replace("-", "");
-
-
-                        // Convert from hexadecimal to decimal
-                        if (int.TryParse(lastFourHex, System.Globalization.NumberStyles.HexNumber, null, out lastFourDecimalValue))
-                        {
-                            // Check if the decimal value is 0
-                            if (lastFourDecimalValue == 0)
-                            {
-                                await DisplayAlert("Check Result", "The last four characters of Manufacturer Data represent 0 in decimal.", "OK");
-                            }
-                            else
-                            {
-                                manufacturerData = lastFourDecimalValue.ToString();
-                                authenticatedBoatControlDevice = true;
-
-                                PairBtn.IsVisible = true;
-                                await DisplayAlert("Check Result", $"The last four characters of Manufacturer Data represent {lastFourDecimalValue} in decimal.", "OK");
-
-                            }
-                        }
-                        else
-                        {
-                            await DisplayAlert("Error", "Failed to convert Manufacturer Data from hexadecimal to decimal.", "OK");
-                        }
-                    }
-                    else
-                    {
-                        await DisplayAlert("Error", "Manufacturer Data is not available or too short.", "OK");
-                    }
-                    var number = device.Name.Substring(3);
-
-                    // Prepare a message with advertisement details
-                    string message = $"Device: {device.Name ?? "Unnamed"}\n" +
-                                     $"Local Name: {advertisementData.LocalName ?? "N/A"}\n" +
-                                     $"DeviceNo.: {number ?? "N/A"}\n" +
-                                     $"Manufacturer Data: {advertisementData.ManufacturerData ?? "N/A"}\n" +
-                                     $"OwnerID: {manufacturerData ?? "N/A"}\n" +
-                                     $"Service UUIDs: {advertisementData.ServiceUuids ?? "N/A"}";
-
-                    // Display the advertisement data
-                    await DisplayAlert("Device Advertisement Data", message, "OK");
-
+                if (device.IsUnregistered()){
+                    connectionManager.Pair();
+                    SetOwner(deviceId);
                 }
-                catch (Exception ex)
-                {
-                    await DisplayAlert("Error", $"Failed to retrieve advertisement data: {ex.Message}", "OK");
+                else {
+                    connectionManager.ConnectBle();
+                    SetOwner(deviceId);
                 }
             }
         }
 
-        // Event handler for the "Pair" button
-        private async void PairDevice(object sender, EventArgs e)
+        private void StartCommunication()
         {
-            string _id = "1311";
-            string _userToken = "3756099711ee42dc8d4cfb5145895568";
-
-            if (DevicesListView.SelectedItem is IDevice selectedDevice)
+            if (!string.IsNullOrWhiteSpace(_bearerToken) && _id > 0 && !string.IsNullOrWhiteSpace(_token))
             {
-                bool result = await PairDeviceAsync(selectedDevice, _id, _userToken);
+                // Initialize communication with the provided authentication parameters
+                _communication.Start(new Communication.Models.AuthenticationUser()
+                {
+                    BearerToken = _bearerToken,
+                    Id = _id,
+                    UserToken = _token
+                });
 
-                if (result)
-                {
-                    await DisplayAlert("Success", "Device paired successfully.", "OK");
-                }
-                else
-                {
-                    await DisplayAlert("Error", "Failed to pair device.", "OK");
-                }
             }
             else
             {
-                await DisplayAlert("Error", "No device selected.", "OK");
+                // Log or handle missing parameters as needed
+                throw new InvalidOperationException("User parameters are not set properly.");
             }
         }
 
-        private async Task<bool> PairDeviceAsync(IDevice device, string id, string userToken)
+        public string getLocation(string message)
         {
+            return $"{latitude}+{longitude}";
+        }
+        public string UpdateFirmware(string deviceId, string downloadVersion)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
 
             try
             {
-                // Connect to the device
-                await _adapter.ConnectToDeviceAsync(device);
-                await DisplayAlert("Success", "Connected Successfully", "OK");
-
-                var service = await device.GetServiceAsync(Guid.Parse(BLE_SERVICE_UUID));
-                if (service == null) throw new Exception("Service not found on the device.");
-
-                // Get required characteristics
-                var txCharacteristic = await service.GetCharacteristicAsync(Guid.Parse(BLE_CHARACTERISTIC_UUID_TX));
-                if (txCharacteristic == null) throw new Exception("TX characteristic not found on the device.");
-
-                var rxCharacteristic = await service.GetCharacteristicAsync(Guid.Parse(BLE_CHARACTERISTIC_UUID_RX));
-                if (rxCharacteristic == null) throw new Exception("RX characteristic not found on the device.");
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
 
 
-                // Step 1: Send initial pairing command
-                var randomChallenge = Guid.NewGuid().ToString("N");
-                await DisplayAlert("Info", $"Succeeded sending challenge: {randomChallenge}", "OK");
-                var deviceMessage = DeviceMessage.GetTextMessage(randomChallenge, "auth");
 
-                var textToSend = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage);
-                await txCharacteristic.WriteAsync(textToSend);
-
-                var response = await ReceiveBleMessageAsync(rxCharacteristic);
-                if (response.StartsWith("text"))
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
                 {
-                    Console.WriteLine("Pairing succeeded with response: " + response);
-                    await DisplayAlert("Info", $"Succeeded with 1st response: {response}", "OK");
+                    var auth2 = $"{newDeviceId}{downloadVersion}".Sha256();
+                    using var client = new HttpClient()
+                    {
+                        BaseAddress = new Uri("https://boatcontrol.net"),
+                        Timeout = TimeSpan.FromSeconds(15)
+                    };
+                    
+                    var firmwareResponse = client.GetAsync($"/Software/Download?number={device.Number}&auth2={auth2}").Result;
+                    if (firmwareResponse.StatusCode != HttpStatusCode.OK)
+                        return $"Forventede statuskode 200, ikke {firmwareResponse.StatusCode}";
+
+                    var filename = firmwareResponse.Content.Headers.ContentDisposition.FileName;
+                    var version = Regex.Match(filename, "^[^-]*-(.*)\\.[^.]+$").Groups[1].Value;
+                    var content = firmwareResponse.Content.ReadAsByteArrayAsync().Result;
+                      
+                    var message = DeviceMessage.GetFileWithMd5Message("/firmware.bin", content);
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message == "" ? "Success" : result.Message,
+                    };
+
+                    //Return the serialized JSON response
+                    var DeviceResponse = JsonSerializer.Serialize(response);
+
+                    return DeviceResponse;
+
+                }
+                return "No box found";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+                return ex.Message;
+            }
+        }
+
+        public string GetDeviceInfo(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage("device info");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                    return DeviceInforesult;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
+
+            // Return a failure message if no matching device or an error occurred
+            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info for ID: " + deviceId });
+        }
+
+        public string GetWifiList(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage("wifi list");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                    return DeviceInforesult;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
+
+            // Return a failure message if no matching device or an error occurred
+            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info for ID: " + deviceId });
+        }
+
+        public string GetRelay(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage("relay list");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                    return DeviceInforesult;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
+
+            // Return a failure message if no matching device or an error occurred
+            return JsonSerializer.Serialize(new { Message = "Unable to retrieve device info for ID: " + deviceId });
+        }
+
+        public void SetWifi(string deviceId, string ssid, string password)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            password = "EPTechJyllandsgade6400##";
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage($"wifi join {ssid} {password}");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
                     
                 }
-                var contraChallenge = ExtractChallenge(response); 
-                await DisplayAlert("Info", $"Contra Challenge: {contraChallenge}", "OK");
-
-                // Step 2 : SHA256 encrypted challenge response + contra-challenge
-                var randomChallenge2 = contraChallenge;
-                var expectedResponse = $"{contraChallenge}{userToken}";
-                await DisplayAlert("Info", $"Contra Challenge: {contraChallenge}", "OK");
-                var deviceMessage2 = DeviceMessage.GetTextMessage(contraChallenge, "auth");
-
-                var textToSend2 = _deviceMessageInterpritator.GetMessageStringAsBytes(deviceMessage2);
-                await txCharacteristic.WriteAsync(textToSend2);
-
-                var response2 = await ReceiveBleMessageAsync(rxCharacteristic);
-                if (response2.StartsWith("text"))
-                {
-                    Console.WriteLine("Pairing succeeded with 2nd response: " + response2);
-                    await DisplayAlert("Info", $"Succeeded with 2nd response: {response2}", "OK");
-                    return true;
-                }
-
-                throw new Exception("Unexpected response from device: " + response2);
             }
             catch (Exception ex)
             {
-                await DisplayAlert("Error", $"Failed to pair device: {ex.Message}", "OK");
-                return false;
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
             }
+
+            // Return a failure message if no matching device or an error occurred
         }
 
-        private string ExtractChallenge(string response)
+        public string SetRelay(string deviceId, string index, string relaystatus)
         {
-            if (string.IsNullOrEmpty(response))
-            {
-                throw new ArgumentException("Response cannot be null or empty.", nameof(response));
-            }
-
-            // Define a regex to match the "challenge" key and capture its value
-            var challengeRegex = new Regex(@"challenge=([a-fA-F0-9]+)", RegexOptions.Compiled);
-
-            // Attempt to match the regex to the response string
-            var match = challengeRegex.Match(response);
-            if (match.Success && match.Groups.Count > 1)
-            {
-                return match.Groups[1].Value; // Return the captured value
-            }
-
-            throw new Exception("Challenge not found in the response.");
-        }
-
-        private Dictionary<string, string> ParseResponse(string response)
-        {
-            // Create a dictionary to hold key-value pairs
-            var result = new Dictionary<string, string>();
-
-            // Split the response string into key-value pairs using '&' as a delimiter
-            var pairs = response.Split('&');
-            foreach (var pair in pairs)
-            {
-                // Split each pair into key and value using '=' as a delimiter
-                var keyValue = pair.Split('=');
-                if (keyValue.Length == 2) // Ensure there is both a key and a value
-                {
-                    result[keyValue[0]] = keyValue[1]; // Add the key-value pair to the dictionary
-                }
-                else if (keyValue.Length == 1) // Handle keys with no value (e.g., "name=")
-                {
-                    result[keyValue[0]] = string.Empty;
-                }
-            }
-
-            return result;
-        }
-        private async Task<string> ReceiveBleMessageAsync(ICharacteristic rxCharacteristic, int timeoutMilliseconds = 5000)
-        {
-            var tcs = new TaskCompletionSource<string>();
-
-            // Define a timeout for waiting for BLE responses
-            var cts = new CancellationTokenSource();
-            cts.CancelAfter(timeoutMilliseconds);
-
-            // Buffer to accumulate received data
-            StringBuilder messageBuilder = new StringBuilder();
-
-            // Event handler for receiving data
-            EventHandler<CharacteristicUpdatedEventArgs> handler = (s, e) =>
-            {
-                try
-                {
-                    // Get the data received in the BLE notification
-                    var data = e.Characteristic.Value;
-                    var messagePart = Encoding.UTF8.GetString(data, 0, data.Length);
-
-                    // Append the received chunk to the buffer
-                    Console.WriteLine($"Received chunk: {messagePart}");
-                    messageBuilder.Append(messagePart);
-
-                    // Check if we have received the entire message
-                    // You can use a specific delimiter or check for a known ending pattern
-                    if (messagePart.Contains("challenge="))  // Modify this based on your message structure
-                    {
-                        // Complete message received
-                        Console.WriteLine($"Complete message received: {messageBuilder.ToString()}");
-                        tcs.TrySetResult(messageBuilder.ToString()); // Set the result when the full message is received
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error decoding message: {ex.Message}");
-                    tcs.TrySetException(ex); // In case of an error, set exception
-                }
-            };
-
-            // Subscribe to the characteristic's ValueUpdated event
-            rxCharacteristic.ValueUpdated += handler;
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
 
             try
             {
-                await rxCharacteristic.StartUpdatesAsync(); // Start listening for notifications
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
 
-                // Wait for the message or timeout
-                using (cts.Token.Register(() => tcs.TrySetCanceled()))  // Cancel after timeout
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
                 {
-                    return await tcs.Task; // Await the TaskCompletionSource
+                    var message = DeviceMessage.GetTextMessage($"relay set {index} {relaystatus}");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                    return DeviceInforesult;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error during BLE message reception: {ex.Message}");
-                throw;
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
             }
-            finally
+            return "Failed Set Relay";
+            // Return a failure message if no matching device or an error occurred
+        }
+
+        public void SetOwner(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
             {
-                // Clean up: unsubscribe and stop updates
-                rxCharacteristic.ValueUpdated -= handler;
-                await rxCharacteristic.StopUpdatesAsync();
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage($"device setowner {_id} {_token}");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                }
             }
-        }
-        private BluetoothDeviceInfo GetAdvertisementData(IDevice device)
-        {
-            var info = new BluetoothDeviceInfo
+            catch (Exception ex)
             {
-                Name = device.Name,
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
 
-                LocalName = device.AdvertisementRecords?
-                             .FirstOrDefault(record => record.Type == AdvertisementRecordType.CompleteLocalName)?
-                             .Data != null
-                             ? System.Text.Encoding.UTF8.GetString(device.AdvertisementRecords
-                                   .First(record => record.Type == AdvertisementRecordType.CompleteLocalName).Data)
-                             : null,
-
-                ManufacturerData = device.AdvertisementRecords?
-                                   .FirstOrDefault(record => record.Type == AdvertisementRecordType.ManufacturerSpecificData)?
-                                   .Data != null
-                                   ? BitConverter.ToString(device.AdvertisementRecords
-                                       .First(record => record.Type == AdvertisementRecordType.ManufacturerSpecificData).Data)
-                                   : null,
-
-                ServiceUuids = device.AdvertisementRecords?
-                              .FirstOrDefault(record => record.Type == AdvertisementRecordType.ServiceData)?
-                              .Data != null
-                              ? BitConverter.ToString(device.AdvertisementRecords
-                                  .First(record => record.Type == AdvertisementRecordType.ServiceData).Data)
-                              : null
-            };
-            
-
-            return info;
+            // Return a failure message if no matching device or an error occurred
         }
-        
-        private async Task UpdateUIAsync()
+
+        public void SetReset(string deviceId)
         {
-            await MainThread.InvokeOnMainThreadAsync(() =>
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
             {
-                // Your UI update code here
-                // For example, refreshing a ListView or Label
-                DevicesListView.ItemsSource = _devices;
-            });
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage($"device reset");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
+
+            // Return a failure message if no matching device or an error occurred
         }
+
+        public void SetRestart(string deviceId)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var message = DeviceMessage.GetTextMessage($"device restart");
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message,
+                    };
+
+                    Console.WriteLine($"Device Info Retrieved: {result.Message}");
+
+                    //Return the serialized JSON response
+                    var DeviceInforesult = JsonSerializer.Serialize(response);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+            }
+
+            // Return a failure message if no matching device or an error occurred
+        }
+
+        private void _communication_OnDeviceMessage(Communication.Connections.IDeviceConnectionManager connectionManager, DeviceMessage message)
+        {
+            // This is for broadcasting messages etc., like n2k :)
+            Console.WriteLine($"{message.Message}");
+            DisplayAlert("Info", $"{message.Message}", "Cancel");
+        }
+
+        public string SetInformation(string id, string bearertoken, string token)
+        {
+            Console.WriteLine("DoSyncWorkReturn");
+            return "Hello from C#!";
+        }
+
+        private void _communication_OnDevicesChanged()
+        {
+
+        }
+                                                                                                                                                                                                                                                             
+        private void Communication_OnDevicesChanged()
+        {
+            MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _devices.Clear();
+                nearbyBC.Clear();
+
+                foreach (var device in _communication.Devices)
+                {
+                    _devices.Add(new ExtendedDeviceInfo(device.Key, device.Value));
+                    nearbyBC.Add(device.ToString());
+                    nearbyBC.Add($"{device.Key}: {device.Value}"); // Format as needed
+                }
+            }).Wait();
+        }
+
+
+
     }
 }
 
-public class BluetoothDeviceInfo
-{
-    public string Name { get; set; }
-    public string LocalName { get; set; }
-    public string DeviceNo { get; set; }
-    public string ManufacturerData { get; set; }
-    public string OwnerID { get; set; }
-    public string ServiceUuids { get; set; }
-}
 
-public class WifiNetwork
-{
-    public string SSID { get; set; }
-    public int SignalStrength { get; set; }
-}
+
+
+
+
 
