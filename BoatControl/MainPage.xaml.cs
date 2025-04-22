@@ -2,11 +2,19 @@ using System;
 using System.Collections.ObjectModel;
 using BoatControl.Shared.Messaging;
 using BoatControl.Communication;
+using BoatControl.Communication.Models;
 using DeviceInfo = BoatControl.Communication.Models.DeviceInfo;
 using BoatControl.Communication.Helpers;
 using BoatControl.Communication.Connections;
+using AuthenticationUser=BoatControl.Communication.Models.AuthenticationUser;
 using Microsoft.Maui.Controls;
 using System.Text.Json;
+using BoatControl.Communication.Storage;
+using System.Net;
+using System.Text.RegularExpressions;
+using System.Text;
+using System.Security.Cryptography;
+using Microsoft.Maui.Devices.Sensors;
 
 
 namespace BoatControl
@@ -27,6 +35,19 @@ namespace BoatControl
         }
     }
 
+    public static class StringExtensions
+    {
+        public static string Sha256(this string str)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(str);
+
+            using (SHA256 sha256 = SHA256.Create()) // Updated to use SHA256.Create()
+            {
+                byte[] hash = sha256.ComputeHash(bytes);
+                return Convert.ToHexString(hash).ToLower(); // More efficient way to convert to hex
+            }
+        }
+    }
 
     public partial class MainPage : ContentPage
     {
@@ -42,6 +63,9 @@ namespace BoatControl
         bool authenticatedBoatControlDevice = false;
         bool pairingBoatControlDeviceComplete = false;
         bool registerdBoatControlDevice = false;
+
+        double latitude = 0;
+        double longitude = 0;
 
         //string _bearerToken="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IkVQVF9UZXN0IiwidXNlcklkIjoxMzExLCJlbWFpbCI6IkJvYXRDb250cm9sQGVwdGVjaG5vbG9naWVzLmRlIiwiaXNzIjoiYXV0aCIsImlhdCI6MTczNjQ1NTgyMCwiZXhwIjoxNzUyMDA3ODIwLCJyb2xlcyI6WyJBZG1pbiIsIkRldmVsb3BlciIsIlNvZnR3YXJlRW5naW5lZXJzIl0sImRldmljZXMiOlsiRDExNTAiLCJEMTE1MyIsIkQxMTU1IiwiRDExNTYiLCJEMTE1NyIsIkQxMTU5Il0sImp0aSI6IjUxNGEzMTBjMzE0ODQ1YTFhZjhiMmU5NzgwMDUyZDY3In0.byIihxpUBlnATnFSFMW8Pvdkc-ZyH1ppgT86elBscD81Zxr0Kog79W2E6C7CQgYfos_jaFpIdQ8PbldQhCWe7-rs4y7zOKHhjMycHtMxzOzpps6pKi-Kqr-izS76o_QOVNJGxZvvwzGZUK4pBorOyGwUwlFf67UBqo0s7bREuTwdMG-WqNFt31AZhu_kGXB1mvQmxY9P_xdLhTItD3QsfTT4MxKH7Zey8B45FplIC2uPKJfHmt9ph6-zuc-L1ysXkv4tHJu_V_nLWvoYA_7I0ELOTlc1uDlyRqi9EPSOgflWLp4yRKzADRmQJ8D8DW681lgE-1yg8_U2UU9piR6gpA";
         string _bearerToken = "";
@@ -69,14 +93,22 @@ namespace BoatControl
             try
             {
                 // Request Location Permission
-                var locationStatus = await Permissions.RequestAsync<Permissions.LocationWhenInUse>();
-                if (locationStatus == PermissionStatus.Granted)
+                var location = await Geolocation.GetLastKnownLocationAsync();
+
+                if (location == null)
                 {
-                    locationPermissionGranted = true;
+                    // If no cached location is available, get a new one
+                    location = await Geolocation.GetLocationAsync(new GeolocationRequest(GeolocationAccuracy.Medium));
+                }
+
+                if (location != null)
+                {
+                    latitude = location.Latitude;
+                    longitude = location.Longitude;
                 }
                 else
                 {
-                    await DisplayAlert("Permission Denied", "Location permission is required to scan for Bluetooth devices.", "OK");
+                    await DisplayAlert("Location Error", "Unable to get location.", "OK");
                 }
 
                 // Request Bluetooth Permissions (for Android and Windows)
@@ -144,7 +176,7 @@ namespace BoatControl
 
 
         //BC Fx
-        public void SetUserParams(string bearerToken, int ownerId, string legacyToken)
+        public string SetUserParams(string bearerToken, int ownerId, string legacyToken)
         {
             // Set user parameters
             _bearerToken = bearerToken;
@@ -153,6 +185,13 @@ namespace BoatControl
 
             // Start communication once parameters are set
             StartCommunication();
+            //_communication.Start(new Communication.Models.AuthenticationUser()
+            //{
+                //BearerToken = _bearerToken,
+                //Id = _id,
+                //UserToken = _token
+            //});
+            return _token;
         }
 
         public string GetDeviceList()
@@ -197,6 +236,67 @@ namespace BoatControl
             {
                 // Log or handle missing parameters as needed
                 throw new InvalidOperationException("User parameters are not set properly.");
+            }
+        }
+
+        public string GetLocation(string message)
+        {
+            var response = $"{latitude}+{longitude}";
+            var DeviceInforesult = JsonSerializer.Serialize(response);
+            return DeviceInforesult;
+        }
+        
+        public string UpdateFirmware(string deviceId, string downloadVersion)
+        {
+            var newDeviceId = deviceId;
+            Console.WriteLine($"GetDeviceInfo Invoked with Device ID: {newDeviceId}");
+
+            try
+            {
+                // Match the device ID in the _communication.Devices dictionary
+                var device = _communication.Devices.Keys.FirstOrDefault(d => d.Number.Contains(newDeviceId));
+                var matchingDevice = nearbyBC.FirstOrDefault(d => d.Contains(newDeviceId));
+
+
+
+                if (device != null && _communication.Devices.TryGetValue(device, out var connectionManager))
+                {
+                    var auth2 = $"{newDeviceId}{downloadVersion}".Sha256();
+                    using var client = new HttpClient()
+                    {
+                        BaseAddress = new Uri("https://boatcontrol.net"),
+                        Timeout = TimeSpan.FromSeconds(15)
+                    };
+                    
+                    var firmwareResponse = client.GetAsync($"/Software/Download?number={device.Number}&auth2={auth2}").Result;
+                    if (firmwareResponse.StatusCode != HttpStatusCode.OK)
+                        return $"Forventede statuskode 200, ikke {firmwareResponse.StatusCode}";
+
+                    var filename = firmwareResponse.Content.Headers.ContentDisposition.FileName;
+                    var version = Regex.Match(filename, "^[^-]*-(.*)\\.[^.]+$").Groups[1].Value;
+                    var content = firmwareResponse.Content.ReadAsByteArrayAsync().Result;
+                      
+                    var message = DeviceMessage.GetFileWithMd5Message("/firmware.bin", content);
+
+                    var result = connectionManager.SendAsync(message).Result;
+
+                    var response = new
+                    {
+                        Message = result.Message == "" ? "Success" : result.Message,
+                    };
+
+                    //Return the serialized JSON response
+                    var DeviceResponse = JsonSerializer.Serialize(response);
+
+                    return DeviceResponse;
+
+                }
+                return "No box found";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving device info: {ex.Message}");
+                return ex.Message;
             }
         }
 
@@ -535,4 +635,6 @@ namespace BoatControl
 
     }
 }
+
+
 
